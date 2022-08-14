@@ -1,0 +1,16 @@
+{
+  "name": "sample_blockchain",
+  "version": "1.0.0",
+  "description": "Simple blockchain made in TS using Proof-of-work",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/crypto-js": "^4.1.1",
+    "crypto-js": "^4.1.1",
+    "typescript": "^4.7.4"
+  }
+}
