@@ -1,13 +1,79 @@
+import { Address } from "./Account";
 import { Block } from "./Block";
-import { Transaction } from "./Transaction";
+import { Transaction, TransactionType } from "./Transaction";
+import { Utxo, UtxoDb } from "./UtxoDb";
 
 export class BlockChain {
   difficulty: number;
   chain: Block[];
+  private utxoDb: UtxoDb;
+  /**
+   * Number of transactions allowed to be stored in a block
+   *
+   * Kept 10 for simplicity. Typically 500+ per block
+   */
+  blockTransactionsLimit = 10;
   constructor(difficulty: number, chain?: Block[] | null) {
     this.difficulty = difficulty;
     this.chain = chain || [new Block("", Date.now(), [])];
+    this.utxoDb = new UtxoDb(this.chain);
   }
+
+  /**
+   * Function to verify if the receiver address is correct
+   * @param type Type of the transaction
+   * @param receiverAddress Receiver's address without the checksum of the transaction
+   * @param addressToVerify
+   */
+  verifyReceiverAddress = (
+    type: TransactionType,
+    receiverAddress: string,
+    addressToVerify: string
+  ) => {
+    const address = Address.generateAddress(type, receiverAddress);
+    return address === addressToVerify;
+  };
+
+  transact = (
+    fromAddress: string,
+    toAddress: string,
+    type: TransactionType,
+    amount: number
+  ) => {
+    if (!this.verifyReceiverAddress(type, toAddress, "")) {
+      return false;
+    }
+    const availableUtxos = this.utxoDb.getUtxoValueData(
+      fromAddress,
+      this.chain,
+      true
+    );
+    const amountAvailableToTransact = Object.values(availableUtxos)
+      .map((utxoData) => utxoData.value)
+      .reduce((totalAmount, value) => totalAmount + value);
+    if (amountAvailableToTransact < amount) {
+      console.error(
+        "Total amount available for the given address is less than the coins owned by it."
+      );
+      return false;
+    }
+    const utxosToBeSpent = this.getUtxosToBeSpent(amount, availableUtxos);
+  };
+
+  private getUtxosToBeSpent = (
+    amount: number,
+    availableUtxos: { utxo: Utxo; value: number }[]
+  ) => {
+    const utxosToBeSpent = [];
+    let totalInputAmount = 0;
+    let index = 0;
+    while (totalInputAmount < amount && index < availableUtxos.length) {
+      utxosToBeSpent.push(availableUtxos[index]);
+      totalInputAmount += availableUtxos[index].value;
+      index++;
+    }
+    return utxosToBeSpent;
+  };
 
   addBlock = (transactions: Transaction[], timestamp: number) => {
     const latestBlock = this.getLatestBlock();
