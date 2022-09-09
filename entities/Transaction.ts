@@ -39,6 +39,7 @@ export class Output {
 export class Transaction {
   timestamp: number;
   isTransactionValid: boolean = false;
+  miningReward: number;
   txid?: string;
   signature?: string;
   inputs: Input[];
@@ -47,21 +48,30 @@ export class Transaction {
     srcAddress: string,
     availableUtxos: { utxo: Utxo; value: number }[],
     outputs: Output[],
+    miningReward: number,
     timestamp?: number
   ) {
     this.timestamp = timestamp || Date.now();
-    const targetAmount = outputs
+    const outputAmount = outputs
       .map((output) => output.value)
       .reduce((total, outputValue) => total + outputValue);
+    const targetAmount = outputAmount + miningReward;
     this.outputs = outputs;
     const { inputs, change } = this.getInputsAndTransactChange(
       availableUtxos,
       targetAmount
     );
+    this.miningReward = miningReward;
     this.inputs = inputs;
     this.outputs.push(new Output(change, srcAddress));
   }
 
+  /**
+   * Function to get inputs & transaction change
+   * @param availableUtxos All the available UTXOs in the ownership of the source
+   * @param targetAmount Total output amount + mining reward of the transaction
+   * @returns Input array & return change of the transaction
+   */
   getInputsAndTransactChange = (
     availableUtxos: { utxo: Utxo; value: number }[],
     targetAmount: number
