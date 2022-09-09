@@ -12,17 +12,26 @@ export class Address {
 
   constructor(hashedPubKey: string) {
     this.pubAddress = hashedPubKey;
-    this.p2pkh = Address.generateAddress(TransactionType.P2PKH, hashedPubKey);
-    this.pk = Address.generateAddress(TransactionType.PK, hashedPubKey);
+    this.p2pkh = Address.generateAddress(
+      TransactionType.P2PKH,
+      hashedPubKey
+    ).fullAddress;
+    this.pk = Address.generateAddress(
+      TransactionType.PK,
+      hashedPubKey
+    ).fullAddress;
     this.multiSig = Address.generateAddress(
       TransactionType.MULTISIG,
       hashedPubKey
-    );
-    this.p2sh = Address.generateAddress(TransactionType.P2SH, hashedPubKey);
+    ).fullAddress;
+    this.p2sh = Address.generateAddress(
+      TransactionType.P2SH,
+      hashedPubKey
+    ).fullAddress;
     this.opReturn = Address.generateAddress(
       TransactionType.OP_RETURN,
       hashedPubKey
-    );
+    ).fullAddress;
   }
 
   static generateAddress = (
@@ -35,7 +44,7 @@ export class Address {
      * First 32 bits, ie 4 characters of the SHA256 hash of SHA 256 hash of the prefixed public key
      */
     const checksum = verifiableHash.slice(0, 4);
-    return prefixedPubKey + checksum;
+    return { fullAddress: prefixedPubKey + checksum, checksum };
   };
 }
 

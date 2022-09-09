@@ -1,8 +1,15 @@
 import { Address } from "./Account";
 import { Block } from "./Block";
-import { Transaction, TransactionType } from "./Transaction";
-import { Utxo, UtxoDb } from "./UtxoDb";
+import { Output, Transaction, TransactionType } from "./Transaction";
+import { UtxoDb } from "./UtxoDb";
 
+class Destination extends Output {
+  destFullAddress: string;
+  constructor(value: number, to: string, destFullAddress: string) {
+    super(value, to);
+    this.destFullAddress = destFullAddress;
+  }
+}
 export class BlockChain {
   difficulty: number;
   chain: Block[];
@@ -22,25 +29,39 @@ export class BlockChain {
   /**
    * Function to verify if the receiver address is correct
    * @param type Type of the transaction
-   * @param receiverAddress Receiver's address without the checksum of the transaction
-   * @param addressToVerify
+   * @param receiverAddresses Receiver's address without the checksum of the transaction
+   * @param addressesToVerify
    */
-  verifyReceiverAddress = (
+  verifyReceiverAddresses = (
     type: TransactionType,
-    receiverAddress: string,
-    addressToVerify: string
+    receiverAddresses: string[],
+    addressesToVerify: string[]
   ) => {
-    const address = Address.generateAddress(type, receiverAddress);
-    return address === addressToVerify;
+    if (receiverAddresses.length !== addressesToVerify.length) {
+      return false;
+    }
+    return receiverAddresses.every((address, index) => {
+      const { checksum: generatedChecksum } = Address.generateAddress(
+        type,
+        address
+      );
+      const addressToVerify = addressesToVerify[index];
+      const checksum = addressToVerify.slice(-4);
+      return checksum === generatedChecksum;
+    });
   };
 
   transact = (
     fromAddress: string,
-    toAddress: string,
-    type: TransactionType,
-    amount: number
+    outputs: Destination[],
+    type: TransactionType
   ) => {
-    if (!this.verifyReceiverAddress(type, toAddress, "")) {
+    const outputAddresses = outputs.map((output) => output.to);
+    const fullAddresses = outputs.map((output) => output.destFullAddress);
+    if (!this.verifyReceiverAddresses(type, outputAddresses, fullAddresses)) {
+      console.error(
+        "Receiver addresses couldn't be verified. Breaking transact."
+      );
       return false;
     }
     const availableUtxos = this.utxoDb.getUtxoValueData(
@@ -48,31 +69,18 @@ export class BlockChain {
       this.chain,
       true
     );
-    const amountAvailableToTransact = Object.values(availableUtxos)
-      .map((utxoData) => utxoData.value)
-      .reduce((totalAmount, value) => totalAmount + value);
-    if (amountAvailableToTransact < amount) {
-      console.error(
-        "Total amount available for the given address is less than the coins owned by it."
-      );
+    const transactionOutputs = outputs.map(
+      (output) => new Output(output.value, output.to)
+    );
+    const transaction = new Transaction(
+      fromAddress,
+      availableUtxos,
+      transactionOutputs
+    );
+    if (!transaction.isTransactionValid) {
+      console.error("Invalid transaction received. Breaking transact");
       return false;
     }
-    const utxosToBeSpent = this.getUtxosToBeSpent(amount, availableUtxos);
-  };
-
-  private getUtxosToBeSpent = (
-    amount: number,
-    availableUtxos: { utxo: Utxo; value: number }[]
-  ) => {
-    const utxosToBeSpent = [];
-    let totalInputAmount = 0;
-    let index = 0;
-    while (totalInputAmount < amount && index < availableUtxos.length) {
-      utxosToBeSpent.push(availableUtxos[index]);
-      totalInputAmount += availableUtxos[index].value;
-      index++;
-    }
-    return utxosToBeSpent;
   };
 
   addBlock = (transactions: Transaction[], timestamp: number) => {
