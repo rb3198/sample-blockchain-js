@@ -53,6 +53,7 @@ export class BlockChain {
 
   transact = (
     fromAddress: string,
+    miningReward: number,
     outputs: Destination[],
     type: TransactionType
   ) => {
@@ -75,7 +76,8 @@ export class BlockChain {
     const transaction = new Transaction(
       fromAddress,
       availableUtxos,
-      transactionOutputs
+      transactionOutputs,
+      miningReward
     );
     if (!transaction.isTransactionValid) {
       console.error("Invalid transaction received. Breaking transact");
