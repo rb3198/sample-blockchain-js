@@ -14,6 +14,10 @@ class Destination extends Output {
 export class BlockChain {
   difficulty: number;
   chain: Block[];
+  private pendingTransactions: {
+    transaction: Transaction;
+    inputPubKey: string;
+  }[];
   private utxoDb: UtxoDb;
   /**
    * Number of transactions allowed to be stored in a block
@@ -25,6 +29,7 @@ export class BlockChain {
     this.difficulty = difficulty;
     this.chain = chain || [new Block("", Date.now(), [])];
     this.utxoDb = new UtxoDb(this.chain);
+    this.pendingTransactions = [];
   }
 
   /**
@@ -52,8 +57,33 @@ export class BlockChain {
     });
   };
 
+  /**
+   * Pushes the transaction to pending transactions, ordering them by mining reward value
+   * @param transaction Transaction to be pushed
+   */
+  private pushToPendingTransactions = (transaction: {
+    transaction: Transaction;
+    inputPubKey: string;
+  }) => {
+    let i = this.pendingTransactions.length - 1;
+    const { miningReward } = transaction.transaction;
+    let isInserted = false;
+    while (i > 0) {
+      if (this.pendingTransactions[i].transaction.miningReward > miningReward) {
+        this.pendingTransactions.splice(i + 1, 0, transaction);
+        isInserted = true;
+        break;
+      }
+      i--;
+    }
+    if (!isInserted) {
+      this.pendingTransactions.splice(i, 0, transaction);
+    }
+  };
+
   transact = (
     fromAddress: string,
+    inputPubKey: string,
     sign: (data: any) => Buffer,
     miningReward: number,
     outputs: Destination[],
@@ -86,6 +116,45 @@ export class BlockChain {
       console.error("Invalid transaction received. Breaking transact");
       return false;
     }
+    this.pushToPendingTransactions({ transaction, inputPubKey });
+    console.log(
+      `Transaction with txid ${transaction.txid} pushed to pending transactions!`
+    );
+    return true;
+  };
+
+  minePendingTransactions = () => {
+    const totalPendingTransactions = this.pendingTransactions.length;
+    if (totalPendingTransactions < this.blockTransactionsLimit) {
+      console.log(
+        "Pending transactions less than block limit. Wait for it to fill up!"
+      );
+      return false;
+    }
+    const newBlockTransactions = [];
+    for (let i = 0; i < this.blockTransactionsLimit; i++) {
+      const { transaction, inputPubKey } = this.pendingTransactions[i];
+      const { txid, signature } = transaction;
+      if (!signature) {
+        console.warn(
+          `Transaction with txid ${transaction.txid} Contains no signature! Skipping it.`
+        );
+        continue;
+      }
+      const rsaPair = new NodeRSA({ b: 512 });
+      rsaPair.importKey(inputPubKey);
+      if (!rsaPair.verify(txid, signature)) {
+        console.warn(
+          `Transaction with txid ${txid} contains invalid signature! Skipping it.`
+        );
+        continue;
+      }
+      newBlockTransactions.push(transaction);
+    }
+    this.addBlock(newBlockTransactions, Date.now());
+    this.pendingTransactions = this.pendingTransactions.slice(
+      this.blockTransactionsLimit
+    );
   };
 
   addBlock = (transactions: Transaction[], timestamp: number) => {
