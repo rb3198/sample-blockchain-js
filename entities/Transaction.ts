@@ -1,3 +1,4 @@
+import { SHA256 } from "crypto-js";
 import { Utxo } from "./UtxoDb";
 
 export class Input {
@@ -40,8 +41,8 @@ export class Transaction {
   timestamp: number;
   isTransactionValid: boolean = false;
   miningReward: number;
-  txid?: string;
-  signature?: string;
+  txid: string;
+  signature?: Buffer;
   inputs: Input[];
   outputs: Output[];
   constructor(
@@ -64,7 +65,13 @@ export class Transaction {
     this.miningReward = miningReward;
     this.inputs = inputs;
     this.outputs.push(new Output(change, srcAddress));
+    this.txid = this.getTxid();
   }
+
+  private getTxid = () => {
+    const transactionData = `${this.inputs}-${this.outputs}-${this.timestamp}`;
+    return SHA256(SHA256(transactionData)).toString();
+  };
 
   /**
    * Function to get inputs & transaction change
