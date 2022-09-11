@@ -1,3 +1,4 @@
+import NodeRSA from "node-rsa";
 import { Address } from "./Account";
 import { Block } from "./Block";
 import { Output, Transaction, TransactionType } from "./Transaction";
@@ -53,6 +54,7 @@ export class BlockChain {
 
   transact = (
     fromAddress: string,
+    sign: (data: any) => Buffer,
     miningReward: number,
     outputs: Destination[],
     type: TransactionType
@@ -79,6 +81,7 @@ export class BlockChain {
       transactionOutputs,
       miningReward
     );
+    transaction.signature = sign(transaction.txid);
     if (!transaction.isTransactionValid) {
       console.error("Invalid transaction received. Breaking transact");
       return false;
