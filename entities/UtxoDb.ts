@@ -26,22 +26,22 @@ export class UtxoDb {
   private getUtxoPoolFromBlockChain = (blockChain: Block[]) => {
     const utxoPool: UtxoPool = {};
     blockChain.forEach((block, blockIndex) => {
-      const txidList = Object.keys(block.transactions);
-      txidList.forEach((txid) => {
-        block.transactions[txid].inputs?.forEach((input) => {
-          const utxoKey = txid + input.index;
+      for (const [txid, transaction] of block.transactions) {
+        transaction.inputs?.forEach((input) => {
+          const utxoKey = input.txid + input.index;
           if (utxoPool.hasOwnProperty(utxoKey)) {
             delete utxoPool[utxoKey];
           }
         });
-        block.transactions[txid].outputs?.forEach((output, outputIndex) => {
+        transaction.outputs?.forEach((output, outputIndex) => {
           const utxoKey = txid + outputIndex;
           if (!utxoPool.hasOwnProperty(utxoKey)) {
             utxoPool[utxoKey] = new Utxo(txid, blockIndex, outputIndex);
           }
         });
-      });
+      }
     });
+    this.utxoPool = utxoPool;
     return utxoPool;
   };
 
@@ -58,11 +58,10 @@ export class UtxoDb {
       const { blockIndex, outputIndex, txid } = utxo;
       return (
         !!blockChain[blockIndex] &&
-        !!blockChain[blockIndex].transactions[txid] &&
-        !!blockChain[blockIndex].transactions[txid].outputs &&
-        // @ts-ignore
-        blockChain[blockIndex].transactions[txid].outputs[outputIndex]?.to ===
-          address
+        blockChain[blockIndex].transactions.has(txid) &&
+        !!blockChain[blockIndex].transactions.get(txid)?.outputs &&
+        blockChain[blockIndex].transactions.get(txid)?.outputs[outputIndex]
+          ?.to === address
       );
     });
   };
@@ -90,15 +89,15 @@ export class UtxoDb {
       }
       const { blockIndex, outputIndex, txid } = utxo;
       const block = blockChain[blockIndex];
-      const isValidTransaction = block.transactions.hasOwnProperty(txid);
+      const isValidTransaction = block.transactions.has(txid);
       if (!isValidTransaction) {
         console.error("Invalid UTXO encountered, removing from the DB");
         delete this.utxoPool[txid + outputIndex];
         utxoList.splice(i, 1);
         continue;
       }
-      const transaction = block.transactions[txid];
-      const { outputs } = transaction;
+      const transaction = block.transactions.get(txid);
+      const { outputs } = transaction || {};
       const requiredOutput = outputs && outputs[outputIndex];
       if (!requiredOutput) {
         console.error(
