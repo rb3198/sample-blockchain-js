@@ -41,7 +41,7 @@ export class Block {
 
   calculateHash = () => {
     const input = `${this.prevHash} ${this.timestamp} ${JSON.stringify(
-      this.transactions
+      Array.from(this.transactions.entries())
     )} ${this.nonce}`;
     return SHA256(input).toString();
   };
