@@ -45,6 +45,9 @@ export class UtxoDb {
     return utxoPool;
   };
 
+  updateUtxoPool = (blockChain: Block[]) => {
+    this.utxoPool = this.getUtxoPoolFromBlockChain(blockChain);
+  };
   /**
    * Gets a list of UTXOs of a given address
    * @param address Address of the payer

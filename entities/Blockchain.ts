@@ -1,10 +1,10 @@
 import NodeRSA from "node-rsa";
-import { Address } from "./Account";
+import { AccountNode, Address } from "./Account";
 import { Block } from "./Block";
 import { Output, Transaction, TransactionType } from "./Transaction";
 import { UtxoDb } from "./UtxoDb";
 
-class Destination extends Output {
+export class Destination extends Output {
   destFullAddress: string;
   constructor(value: number, to: string, destFullAddress: string) {
     super(value, to);
@@ -14,6 +14,13 @@ class Destination extends Output {
 export class BlockChain {
   difficulty: number;
   chain: Block[];
+  /**
+   * Reward given to mine a block
+   *
+   * Halves every 5 blocks for simplicity
+   */
+  blockReward: number = 50;
+  coinbaseAccount: AccountNode;
   private pendingTransactions: {
     transaction: Transaction;
     inputPubKey: string;
@@ -22,15 +29,41 @@ export class BlockChain {
   /**
    * Number of transactions allowed to be stored in a block
    *
-   * Kept 10 for simplicity. Typically 500+ per block
+   * Kept 5 for simplicity. Typically 500+ per block
    */
-  blockTransactionsLimit = 10;
-  constructor(difficulty: number, chain?: Block[] | null) {
+  blockTransactionsLimit = 5;
+  constructor(difficulty: number) {
     this.difficulty = difficulty;
-    this.chain = chain || [new Block("", Date.now(), [])];
+    this.chain = [];
+    const { coinbaseAccount } = this.initialiseChain();
+    this.coinbaseAccount = coinbaseAccount;
     this.utxoDb = new UtxoDb(this.chain);
     this.pendingTransactions = [];
   }
+
+  /**
+   * Initializes the blockchain by creating the coinbase account
+   * @returns Coinbase account
+   */
+  initialiseChain = () => {
+    const coinbaseAccount = new AccountNode(this);
+    const coinbaseTransaction = new Transaction(
+      "",
+      [],
+      [
+        new Output(this.blockReward, coinbaseAccount.address.pubAddress),
+        new Output(1, coinbaseAccount.address.pubAddress),
+      ],
+      0,
+      Date.now(),
+      true,
+      this.blockReward
+    );
+    this.addBlock([coinbaseTransaction], Date.now());
+    return {
+      coinbaseAccount,
+    };
+  };
 
   /**
    * Function to verify if the receiver address is correct
@@ -59,17 +92,19 @@ export class BlockChain {
 
   /**
    * Pushes the transaction to pending transactions, ordering them by mining reward value
-   * @param transaction Transaction to be pushed
+   * @param transaction Transaction to be pushed with inputPubKey, ie public key of the input
    */
   private pushToPendingTransactions = (transaction: {
     transaction: Transaction;
     inputPubKey: string;
   }) => {
     let i = this.pendingTransactions.length - 1;
-    const { miningReward } = transaction.transaction;
+    const { transactionFee } = transaction.transaction;
     let isInserted = false;
     while (i > 0) {
-      if (this.pendingTransactions[i].transaction.miningReward > miningReward) {
+      if (
+        this.pendingTransactions[i].transaction.transactionFee > transactionFee
+      ) {
         this.pendingTransactions.splice(i + 1, 0, transaction);
         isInserted = true;
         break;
@@ -85,7 +120,7 @@ export class BlockChain {
     fromAddress: string,
     inputPubKey: string,
     sign: (data: any) => Buffer,
-    miningReward: number,
+    transactionFee: number,
     outputs: Destination[],
     type: TransactionType
   ) => {
@@ -109,7 +144,7 @@ export class BlockChain {
       fromAddress,
       availableUtxos,
       transactionOutputs,
-      miningReward
+      transactionFee
     );
     transaction.signature = sign(transaction.txid);
     if (!transaction.isTransactionValid) {
@@ -123,7 +158,7 @@ export class BlockChain {
     return true;
   };
 
-  minePendingTransactions = () => {
+  minePendingTransactions = (miningNodeAddress: string) => {
     const totalPendingTransactions = this.pendingTransactions.length;
     if (totalPendingTransactions < this.blockTransactionsLimit) {
       console.log(
@@ -151,6 +186,24 @@ export class BlockChain {
       }
       newBlockTransactions.push(transaction);
     }
+    const totalTransactionFee = newBlockTransactions
+      .map((transaction) => transaction.transactionFee)
+      .reduce((total, reward) => total + reward);
+    const transactionFeeOutput = new Output(
+      totalTransactionFee,
+      miningNodeAddress
+    );
+    const blockRewardOutput = new Output(this.blockReward, miningNodeAddress);
+    const coinbaseTransaction = new Transaction(
+      "",
+      [],
+      [blockRewardOutput, transactionFeeOutput],
+      0,
+      Date.now(),
+      true,
+      this.blockReward
+    );
+    newBlockTransactions.push(coinbaseTransaction);
     this.addBlock(newBlockTransactions, Date.now());
     this.pendingTransactions = this.pendingTransactions.slice(
       this.blockTransactionsLimit
@@ -174,10 +227,30 @@ export class BlockChain {
     block.hash = block.calculateHash();
     this.chain.push(block);
     console.log("Block added with hash", block.hash);
+    !!this.utxoDb && this.utxoDb.updateUtxoPool(this.chain);
+    if (this.chain.length % 5 === 0) {
+      this.blockReward /= 2;
+    }
   };
 
   getLatestBlock = () => {
-    return this.chain[this.chain.length - 1];
+    if (this.chain.length > 0) {
+      return this.chain[this.chain.length - 1];
+    }
+    // coinbase
+    const dummyBlock = new Block("", Date.now(), []);
+    dummyBlock.hash = "";
+    return dummyBlock;
+  };
+
+  getAccountBalance = (address: string) => {
+    const utxoList = this.utxoDb.getUtxoValueData(address, this.chain, false);
+    if (utxoList.length === 0) {
+      return 0;
+    }
+    return utxoList
+      .map((utxoWithValue) => utxoWithValue.value)
+      .reduce((total, value) => total + value);
   };
 
   validateChain = () => {
