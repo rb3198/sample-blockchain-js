@@ -1,7 +1,7 @@
 import { Transaction } from "./Transaction";
 import { SHA256 } from "crypto-js";
 
-export type TransactionDict = { [txid: string]: Transaction };
+export type TransactionDict = Map<string, Transaction>;
 
 export class Block {
   prevHash: string;
@@ -25,15 +25,15 @@ export class Block {
   private getTransactionDict = (
     transactionList: Transaction[]
   ): TransactionDict => {
-    const transactionDict: TransactionDict = {};
+    const transactionDict: TransactionDict = new Map();
     if (!transactionList || transactionList.length === 0) {
-      return {};
+      return transactionDict;
     }
     transactionList.forEach((transaction) => {
       if (!transaction.txid) {
         console.warn("Transaction ID not present => Not a valid transaction!");
       } else {
-        transactionDict[transaction.txid] = transaction;
+        transactionDict.set(transaction.txid, transaction);
       }
     });
     return transactionDict;
@@ -41,7 +41,7 @@ export class Block {
 
   calculateHash = () => {
     const input = `${this.prevHash} ${this.timestamp} ${JSON.stringify(
-      this.transactions
+      Array.from(this.transactions.entries())
     )} ${this.nonce}`;
     return SHA256(input).toString();
   };

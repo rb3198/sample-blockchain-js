@@ -1,6 +1,7 @@
 import NodeRSA from "node-rsa";
 import { SHA256, RIPEMD160 } from "crypto-js";
 import { TransactionType } from "./Transaction";
+import { BlockChain, Destination } from "./Blockchain";
 
 export class Address {
   p2pkh: string;
@@ -51,10 +52,12 @@ export class Address {
 export class AccountNode {
   private keyPair: NodeRSA;
   address: Address;
+  blockChain: BlockChain;
 
-  constructor() {
+  constructor(blockChain: BlockChain) {
     this.keyPair = new NodeRSA({ b: 512 });
     this.address = this.generateAddress();
+    this.blockChain = blockChain;
   }
 
   private generateAddress = () => {
@@ -62,5 +65,24 @@ export class AccountNode {
     const pubKeyHash = SHA256(pubKey);
     const finalHash = RIPEMD160(pubKeyHash).toString();
     return new Address(finalHash);
+  };
+
+  mineTransactions = () => {
+    this.blockChain.minePendingTransactions(this.address.pubAddress);
+  };
+
+  transact = (transactionFee: number, destinations: Destination[]) => {
+    this.blockChain.transact(
+      this.address.pubAddress,
+      this.keyPair.exportKey("public"),
+      this.keyPair.sign.bind(this.keyPair),
+      transactionFee,
+      destinations,
+      TransactionType.P2PKH
+    );
+  };
+
+  getBalance = () => {
+    return this.blockChain.getAccountBalance(this.address.pubAddress);
   };
 }

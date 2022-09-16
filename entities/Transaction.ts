@@ -40,36 +40,54 @@ export class Output {
 export class Transaction {
   timestamp: number;
   isTransactionValid: boolean = false;
-  miningReward: number;
+  transactionFee: number;
   txid: string;
   signature?: Buffer;
   inputs: Input[];
   outputs: Output[];
+  isCoinbase: boolean;
   constructor(
     srcAddress: string,
     availableUtxos: { utxo: Utxo; value: number }[],
     outputs: Output[],
-    miningReward: number,
-    timestamp?: number
+    transactionFee: number,
+    timestamp?: number,
+    isCoinbase?: boolean,
+    blockReward?: number
   ) {
     this.timestamp = timestamp || Date.now();
+    this.isCoinbase = isCoinbase || false;
     const outputAmount = outputs
       .map((output) => output.value)
       .reduce((total, outputValue) => total + outputValue);
-    const targetAmount = outputAmount + miningReward;
+    const targetAmount = outputAmount + transactionFee;
     this.outputs = outputs;
     const { inputs, change } = this.getInputsAndTransactChange(
       availableUtxos,
       targetAmount
     );
-    this.miningReward = miningReward;
+    this.transactionFee = transactionFee;
     this.inputs = inputs;
-    this.outputs.push(new Output(change, srcAddress));
+    if (change > 0) {
+      this.outputs.push(new Output(change, srcAddress));
+    }
+    if (isCoinbase) {
+      this.isTransactionValid =
+        this.outputs.length === 2 &&
+        this.outputs[0].value === blockReward &&
+        this.outputs[1].value > 0;
+    } else if (this.isTransactionValid) {
+      // also verify other transactions in blockchain class using srcAddress
+      // Verify if all the inputs refer to utxos of the same address as srcAddress
+      this.isTransactionValid = this.inputs.length > 0 && !!srcAddress;
+    }
     this.txid = this.getTxid();
   }
 
   private getTxid = () => {
-    const transactionData = `${this.inputs}-${this.outputs}-${this.timestamp}`;
+    const transactionData = `${this.inputs}-${this.outputs}-${
+      this.timestamp
+    }-${Math.random()}`;
     return SHA256(SHA256(transactionData)).toString();
   };
 
@@ -84,6 +102,19 @@ export class Transaction {
     targetAmount: number
   ) => {
     const inputs: Input[] = [];
+    if (this.isCoinbase) {
+      return {
+        inputs,
+        change: 0,
+      };
+    }
+    if (!this.isCoinbase && (!availableUtxos || availableUtxos.length === 0)) {
+      this.isTransactionValid = false;
+      return {
+        inputs,
+        change: 0,
+      };
+    }
     const amountAvailableToTransact = Object.values(availableUtxos)
       .map((utxoData) => utxoData.value)
       .reduce((targetAmount, value) => targetAmount + value);
@@ -112,6 +143,7 @@ export class Transaction {
       this.isTransactionValid = false;
       return { inputs, change: 0 };
     }
+    this.isTransactionValid = true;
     return { inputs, change };
   };
 
