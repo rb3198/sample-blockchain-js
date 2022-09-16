@@ -25,7 +25,14 @@ export class BlockChain {
     transaction: Transaction;
     inputPubKey: string;
   }[];
+  /**
+   * DB to store verified UTXOs
+   */
   private utxoDb: UtxoDb;
+  /**
+   * DB to store unconfirmed UTXOs
+   */
+  private shadowUtxoDb: UtxoDb;
   /**
    * Number of transactions allowed to be stored in a block
    *
@@ -38,6 +45,7 @@ export class BlockChain {
     const { coinbaseAccount } = this.initialiseChain();
     this.coinbaseAccount = coinbaseAccount;
     this.utxoDb = new UtxoDb(this.chain);
+    this.shadowUtxoDb = new UtxoDb(this.chain);
     this.pendingTransactions = [];
   }
 
@@ -116,6 +124,23 @@ export class BlockChain {
     }
   };
 
+  /**
+   * Gets unspent UTXOs from the shadow chain to get latest data.
+   * @param fromAddress Source
+   * @returns UTXOs with values
+   */
+  getAvailableUtxos = (fromAddress: string) => {
+    const shadowChain = [...this.chain];
+    const dummyBlock = new Block(
+      this.getLatestBlock().hash,
+      Date.now(),
+      this.pendingTransactions.map((tr) => tr.transaction)
+    );
+    shadowChain.push(dummyBlock);
+    this.shadowUtxoDb.updateUtxoPool(shadowChain);
+    return this.shadowUtxoDb.getUtxoValueData(fromAddress, shadowChain, true);
+  };
+
   transact = (
     fromAddress: string,
     inputPubKey: string,
@@ -132,11 +157,7 @@ export class BlockChain {
       );
       return false;
     }
-    const availableUtxos = this.utxoDb.getUtxoValueData(
-      fromAddress,
-      this.chain,
-      true
-    );
+    const availableUtxos = this.getAvailableUtxos(fromAddress);
     const transactionOutputs = outputs.map(
       (output) => new Output(output.value, output.to)
     );
@@ -151,7 +172,7 @@ export class BlockChain {
       console.error("Invalid transaction received. Breaking transact");
       return false;
     }
-    this.pushToPendingTransactions({ transaction, inputPubKey });
+    this.pendingTransactions.push({ transaction, inputPubKey });
     console.log(
       `Transaction with txid ${transaction.txid} pushed to pending transactions!`
     );
